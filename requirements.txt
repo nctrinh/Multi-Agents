@@ -1,0 +1,6 @@
+langchain==0.3.25
+langchain_core==0.3.62
+langchain_google_genai==2.1.5
+langchain_tavily==0.2.0
+langgraph==0.4.7
+python-dotenv==1.1.0
