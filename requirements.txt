@@ -3,5 +3,7 @@ langchain_core==0.3.62
 langchain_google_genai==2.1.5
 langchain_tavily==0.2.0
 langgraph==0.4.7
+langgraph-cli[inmem]
 langchain-groq==0.3.2
 python-dotenv==1.1.0
+neo4j==5.28.1
