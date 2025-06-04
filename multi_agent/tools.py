@@ -41,3 +41,12 @@ assign_to_math_agent_with_description = create_task_description_handoff_tool(
     agent_name="math_agent",
     description="Assign task to a math agent.",
 )
+
+assign_to_cyper_kg_agent_with_description = create_task_description_handoff_tool(
+    agent_name="cyper_kg_agent",
+    description="Assign task to a cyper kg agent",
+)
+assign_to_build_knowledge_graph_agent_with_description = create_task_description_handoff_tool(
+    agent_name="build_knowledge_graph_agent",
+    description="Assign task to a build knowledge graph agent.",
+)
