@@ -1,6 +1,8 @@
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
 import os
+import requests
+import re
 from multi_agent.knowledge_graph.build_kg_tools.fetch_canvas_data import (
     fetch_users, fetch_courses, fetch_assignments, fetch_submissions,
     fetch_calendar_events, fetch_discussion_topics, fetch_files,
@@ -20,9 +22,12 @@ NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
+CANVAS_API_TOKEN = os.getenv("CANVAS_API_TOKEN")
+
 # Đường dẫn file snapshot
 current_dir = os.path.dirname(__file__)
 SNAPSHOT_FILE = os.path.join(current_dir, "snapshot.json")
+KNOWLEDGE_SNAPSHOT_FILE = os.path.join(current_dir, "knowledge_snapshot.json")
 
 VIETNAM_TZ = timezone(timedelta(hours=7))
 
@@ -47,19 +52,9 @@ def close(driver):
 # Hàm lưu snapshot
 def save_snapshot(snapshot_data):
     try:
-        snapshots = {"snapshots": []}
-        if os.path.exists(SNAPSHOT_FILE) and os.path.getsize(SNAPSHOT_FILE) > 0:
-            try:
-                with open(SNAPSHOT_FILE, 'r', encoding='utf-8') as f:
-                    snapshots = json.load(f)
-                    if not isinstance(snapshots, dict) or "snapshots" not in snapshots:
-                        print(f"File {SNAPSHOT_FILE} có cấu trúc không hợp lệ, khởi tạo snapshot mới.")
-                        snapshots = {"snapshots": []}
-            except json.JSONDecodeError:
-                print(f"File {SNAPSHOT_FILE} rỗng hoặc chứa dữ liệu không hợp lệ, khởi tạo snapshot mới.")
-        snapshots["snapshots"].append(snapshot_data)
+        # Lưu trực tiếp snapshot_data vào file, không cần mảng snapshots nữa
         with open(SNAPSHOT_FILE, 'w', encoding='utf-8') as f:
-            json.dump(snapshots, f, indent=4)
+            json.dump(snapshot_data, f, indent=4)
         print(f"Đã lưu snapshot vào {SNAPSHOT_FILE}")
     except Exception as e:
         print(f"Lỗi khi lưu snapshot: {e}")
@@ -106,6 +101,80 @@ def get_new_ids(current_ids, entity_type, latest_snapshot):
         return current_ids
     previous_ids = set(latest_snapshot.get(entity_type, []))
     return [id for id in current_ids if id not in previous_ids]
+
+def _extract_file_endpoints(description_html):
+    """
+    Dùng regex để trích tất cả các giá trị của thuộc tính data-api-endpoint.
+    """
+    # Regex: tìm data-api-endpoint="(…)"
+    pattern = r'data-api-endpoint="([^"]+)"'
+    return re.findall(pattern, description_html)
+
+def _fetch_file_metadata(api_url):
+    """
+    Gửi GET request tới Canvas API để lấy metadata của file.
+    Trả về dict JSON (hoặc None nếu thất bại).
+    """
+    headers = {
+        "Authorization": f"Bearer {CANVAS_API_TOKEN}",
+        "Accept": "application/json"
+    }
+    resp = requests.get(api_url, headers=headers)
+    if resp.status_code == 200:
+        return resp.json()
+    else:
+        # Bạn có thể log thêm resp.status_code, resp.text để debug
+        return None
+
+def _link_files_for_assignment(tx, assignment_id, description_html):
+    """
+    1. Tách danh sách API endpoints từ description.
+    2. Với mỗi endpoint, gọi API để lấy metadata:
+       {
+         "id": 548418,
+         "uuid": "...",
+         "display_name": "Use-case.pdf",
+         "filename": "Use-case.pdf",
+         "url": "https://.../download?...",
+         "size": 152629,
+         ...
+       }
+    3. Tạo File node nếu chưa tồn tại
+    4. Tạo quan hệ (a)-[:CONTAINS_FILE]->(f).
+    """
+    endpoints = _extract_file_endpoints(description_html)
+    if not endpoints:
+        return
+
+    for endpoint in endpoints:
+        meta = _fetch_file_metadata(endpoint)
+        if not meta or not meta.get("id"):
+            continue
+
+        # Đầu tiên, đảm bảo File node tồn tại
+        tx.run(
+            """
+            MERGE (f:File {id: $file_id})
+            SET f.filename = $filename,
+                f.url = $url,
+                f.size = $size
+            """,
+            file_id=meta["id"],
+            filename=meta.get("filename"),
+            url=meta.get("url"),
+            size=meta.get("size")
+        )
+
+        # Sau đó tạo relationship
+        tx.run(
+            """
+            MATCH (a:Assignment {id: $assignment_id})
+            MATCH (f:File {id: $file_id})
+            MERGE (a)-[:CONTAINS_FILE]->(f)
+            """,
+            assignment_id=assignment_id,
+            file_id=meta["id"]
+        )
 
 def create_user(tx, user):
     if not user.get("id"):
@@ -173,10 +242,11 @@ def create_assignment(tx, assignment, course_id):
     # Chuyển đổi thời gian sang giờ Việt Nam
     unlock_at = convert_to_vietnam_time(assignment.get("unlock_at"))
     lock_at = convert_to_vietnam_time(assignment.get("lock_at"))
+    description = assignment.get("description")
     tx.run(
         """
         MERGE (a:Assignment {id: $id})
-        SET a.name = $name, a.unlock_at = $unlock_at, a.lock_at = $lock_at
+        SET a.name = $name, a.unlock_at = $unlock_at, a.lock_at = $lock_at, a.description = $description
         MERGE (c:Course {id: $course_id})
         MERGE (c)-[:CONTAINS]->(a)
         """,
@@ -184,8 +254,11 @@ def create_assignment(tx, assignment, course_id):
         lock_at=lock_at,
         name=assignment.get("name"),
         unlock_at=unlock_at,
+        description=description,
         course_id=course_id
     )
+    if description:
+        _link_files_for_assignment(tx, assignment.get("id"), description)
 
 def create_submission(tx, submission, course_id):
     submission_id = submission.get("id")
@@ -429,8 +502,17 @@ def create_quiz(tx, quiz, course_id):
         )
 
 def build_graph(driver: GraphDatabase.driver):
-    latest_snapshot = get_latest_snapshot()
-    # Chuẩn bị cấu trúc snapshot_data như cũ
+    # Đọc snapshot hiện tại nếu có
+    current_snapshot = None
+    if os.path.exists(SNAPSHOT_FILE) and os.path.getsize(SNAPSHOT_FILE) > 0:
+        try:
+            with open(SNAPSHOT_FILE, 'r', encoding='utf-8') as f:
+                current_snapshot = json.load(f)
+        except json.JSONDecodeError:
+            print(f"File {SNAPSHOT_FILE} rỗng hoặc chứa dữ liệu không hợp lệ.")
+            current_snapshot = None
+
+    # Chuẩn bị cấu trúc snapshot_data
     snapshot_data = {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "users": [],
@@ -468,8 +550,8 @@ def build_graph(driver: GraphDatabase.driver):
                     user_id = user.get("id")
                     if user_id:
                         snapshot_data["users"].append(user_id)
-                        # Nếu user_id chưa có trong latest_snapshot thì thêm mới
-                        if not latest_snapshot or user_id not in latest_snapshot.get("users", []):
+                        # Nếu user_id chưa có trong current_snapshot thì thêm mới
+                        if not current_snapshot or user_id not in current_snapshot.get("users", []):
                             create_user(tx, user)
                             diff_data["new_users"].append(user_id)
 
@@ -480,7 +562,7 @@ def build_graph(driver: GraphDatabase.driver):
                             if not channel_id:
                                 continue
                             snapshot_data["communication_channels"].append(channel_id)
-                            if not latest_snapshot or channel_id not in latest_snapshot.get("communication_channels", []):
+                            if not current_snapshot or channel_id not in current_snapshot.get("communication_channels", []):
                                 create_communication_channel(tx, channel)
                                 diff_data["new_communication_channels"].append(channel_id)
 
@@ -491,8 +573,8 @@ def build_graph(driver: GraphDatabase.driver):
                         if not course_id:
                             continue
                         snapshot_data["courses"].append(course_id)
-                        # Nếu khóa học mới so với snapshot trước
-                        if not latest_snapshot or course_id not in latest_snapshot.get("courses", []):
+                        # Nếu khóa học mới so với current_snapshot
+                        if not current_snapshot or course_id not in current_snapshot.get("courses", []):
                             # Tạo mới toàn bộ course (bao gồm enrollments mới của user)
                             enrollments = [e for e in course.get("enrollments", []) if e.get("user_id") == user_id]
                             create_course(tx, course, enrollments)
@@ -506,7 +588,7 @@ def build_graph(driver: GraphDatabase.driver):
                             # Nếu khóa học đã có, thì chỉ quan tâm enrollments mới
                             enrollments = [e for e in course.get("enrollments", []) if e.get("user_id") == user_id]
                             enrollment_ids = [f"{e.get('user_id')}_{course_id}" for e in enrollments if e.get("user_id")]
-                            new_enrollment_ids = get_new_ids(enrollment_ids, "enrollments", latest_snapshot)
+                            new_enrollment_ids = [id for id in enrollment_ids if not current_snapshot or id not in current_snapshot.get("enrollments", [])]
                             new_enrollments = [e for e in enrollments if f"{e.get('user_id')}_{course_id}" in new_enrollment_ids]
                             # Nếu có enrollment mới, vẫn gọi create_course để chỉ tạo quan hệ ENROLLED_IN
                             if new_enrollments:
@@ -518,6 +600,16 @@ def build_graph(driver: GraphDatabase.driver):
                             if e.get("user_id"):
                                 enroll_key = f"{e.get('user_id')}_{course_id}"
                                 snapshot_data["enrollments"].append(enroll_key)
+                        # ===== FILES =====
+                        files = fetch_files(course_id) or []
+                        for file in files:
+                            file_id = file.get("id")
+                            if not file_id:
+                                continue
+                            snapshot_data["files"].append(file_id)
+                            if not current_snapshot or file_id not in current_snapshot.get("files", []):
+                                create_file(tx, file, course_id)
+                                diff_data["new_files"].append(file_id)
 
                         # ===== ASSIGNMENTS =====
                         assignments = fetch_assignments(course_id) or []
@@ -526,7 +618,7 @@ def build_graph(driver: GraphDatabase.driver):
                             if not assignment_id:
                                 continue
                             snapshot_data["assignments"].append(assignment_id)
-                            if not latest_snapshot or assignment_id not in latest_snapshot.get("assignments", []):
+                            if not current_snapshot or assignment_id not in current_snapshot.get("assignments", []):
                                 create_assignment(tx, assignment, course_id)
                                 diff_data["new_assignments"].append(assignment_id)
 
@@ -535,7 +627,7 @@ def build_graph(driver: GraphDatabase.driver):
                         for submission in submissions:
                             submission_id = submission.get("id") or f"unknown_submission_{uuid.uuid4()}"
                             snapshot_data["submissions"].append(submission_id)
-                            if not latest_snapshot or submission_id not in latest_snapshot.get("submissions", []):
+                            if not current_snapshot or submission_id not in current_snapshot.get("submissions", []):
                                 create_submission(tx, submission, course_id)
                                 diff_data["new_submissions"].append(submission_id)
 
@@ -546,7 +638,7 @@ def build_graph(driver: GraphDatabase.driver):
                             if not event_id:
                                 continue
                             snapshot_data["calendar_events"].append(event_id)
-                            if not latest_snapshot or event_id not in latest_snapshot.get("calendar_events", []):
+                            if not current_snapshot or event_id not in current_snapshot.get("calendar_events", []):
                                 create_calendar_event(tx, event, course_id)
                                 diff_data["new_calendar_events"].append(event_id)
 
@@ -555,20 +647,9 @@ def build_graph(driver: GraphDatabase.driver):
                         for topic in discussion_topics:
                             topic_id = topic.get("id") or f"unknown_topic_{uuid.uuid4()}"
                             snapshot_data["discussion_topics"].append(topic_id)
-                            if not latest_snapshot or topic_id not in latest_snapshot.get("discussion_topics", []):
+                            if not current_snapshot or topic_id not in current_snapshot.get("discussion_topics", []):
                                 create_discussion_topic(tx, topic, course_id)
                                 diff_data["new_discussion_topics"].append(topic_id)
-
-                        # ===== FILES =====
-                        files = fetch_files(course_id) or []
-                        for file in files:
-                            file_id = file.get("id")
-                            if not file_id:
-                                continue
-                            snapshot_data["files"].append(file_id)
-                            if not latest_snapshot or file_id not in latest_snapshot.get("files", []):
-                                create_file(tx, file, course_id)
-                                diff_data["new_files"].append(file_id)
 
                         # ===== QUIZZES =====
                         try:
@@ -578,7 +659,7 @@ def build_graph(driver: GraphDatabase.driver):
                         for quiz in quizzes:
                             quiz_id = quiz.get("id") or f"unknown_quiz_{uuid.uuid4()}"
                             snapshot_data["quizzes"].append(quiz_id)
-                            if not latest_snapshot or quiz_id not in latest_snapshot.get("quizzes", []):
+                            if not current_snapshot or quiz_id not in current_snapshot.get("quizzes", []):
                                 create_quiz(tx, quiz, course_id)
                                 diff_data["new_quizzes"].append(quiz_id)
 
@@ -657,27 +738,35 @@ def init_build_knowledge_graph_tools(driver: GraphDatabase.driver, llm_for_actio
         template=action_build_generator_prompt,
         input_variables=["nl_question"]
     )
-    # Create a chain that properly formats the input for the LLM
-    # Ensure llm_for_action has temperature set as float
-    if hasattr(llm_for_action, 'temperature'):
-        llm_for_action.temperature = float(llm_for_action.temperature)
-    action_chain = prompt_template | llm_for_action
+
     def action_generator_tool(nl_question: str) -> dict:
         """
-        Tool để chuyển câu hỏi NL thành action (string). Kết quả trả về là {"output": action}.
+        Tool để chuyển câu hỏi ngôn ngữ tự nhiên thành action (string).
         """
         try:
-            # Kiểm tra nếu input là kết quả từ build_knowledge_graph_tool
-            if isinstance(nl_question, dict) and "status" in nl_question:
-                return {"output": "NONE"}  # Không xử lý kết quả từ build_knowledge_graph_tool
-            
-            # Format the input properly for the chain
-            formatted_input = {"nl_question": nl_question}
-            response = action_chain.invoke(formatted_input)
-            return {"output": response}
+            if isinstance(nl_question, dict):
+                if nl_question.get("status"):
+                    return {"output": "NONE"}
+                nl_question = str(nl_question)
+
+            # Tạo prompt string từ template
+            prompt_str = prompt_template.format(nl_question=nl_question)
+
+            # Gọi LLM với chuỗi đã được format sẵn
+            response = llm_for_action.invoke(prompt_str)
+
+            # Xử lý kết quả
+            if hasattr(response, "content"):
+                action = response.content
+            else:
+                action = str(response)
+
+            action_cleaned = action.strip().strip('"').strip("'").lower()
+            return {"output": action_cleaned or "NONE"}
+
         except Exception as e:
-            print(f"Error in action_generator_tool: {str(e)}")
-            return {"output": "NONE"}  # Default to NONE on error
+            print(f"[action_generator_tool] Error: {str(e)}")
+            return {"output": "NONE"}
     
     def build_knowledge_graph_tool(action: str):
         """Build or update the knowledge graph with Canvas data.
@@ -742,5 +831,5 @@ def init_build_knowledge_graph_tools(driver: GraphDatabase.driver, llm_for_actio
     return action_generator_tool, build_knowledge_graph_tool
 
 driver = get_driver()
-action_generator_tool, build_knowledge_graph_tool = init_build_knowledge_graph_tools(driver, get_action_build_llm)
-# build_graph(driver)
+action_generator_tool, build_knowledge_graph_tool = init_build_knowledge_graph_tools(driver, get_action_build_llm())
+# build_graph(driver))
