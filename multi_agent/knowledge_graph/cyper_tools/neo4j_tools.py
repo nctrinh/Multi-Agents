@@ -32,37 +32,31 @@ def init_cypher_tools(neo4j_connector, llm_for_cypher):
     # Replace LLMChain with RunnableSequence using pipe operator
     cypher_chain = prompt_template | llm_for_cypher
     
-    def cypher_executor_tool(cypher_query: str) -> dict:
+    def cypher_executor_tool(cypher_query: str) -> str:
         """
-        Tool để thực thi Cypher query lên Neo4j và trả kết quả dưới dạng text.
-        LangGraph kỳ vọng mỗi tool trả về { "output": str } hoặc tương tự.
+        Thực thi Cypher query trên Neo4j và trả về kết quả dạng text
+        để agent ReAct có thể đọc như Observation.
         """
         try:
             records = neo4j_connector.run_cypher(cypher_query)
-            # Chuyển danh sách các dict thành một chuỗi text dễ đọc
             if not records:
-                return {"output": "Không tìm thấy kết quả nào từ Neo4j."}
-            
-            # Ví dụ format kết quả đơn giản:
-            lines = []
-            for rec in records:
-                # Mỗi rec là 1 dict, ta có thể join key: value
-                line = ", ".join([f"{k}: {v}" for k, v in rec.items()])
-                lines.append(line)
-            output_text = "\n".join(lines)
-            return {"output": output_text}
+                return "Không tìm thấy kết quả nào từ Neo4j."
+            lines = [
+                ", ".join(f"{k}: {v}" for k, v in rec.items())
+                for rec in records
+            ]
+            return "\n".join(lines)
         except Exception as e:
-            return {"output": f"Error khi chạy Cypher: {str(e)}"}
+            return f"Error khi chạy Cypher: {e}"
         
-    def cypher_generator_tool(nl_question: str) -> dict:
+    def cypher_generator_tool(nl_question: str) -> str:
         """
-        Tool để chuyển câu hỏi NL thành Cypher query (string). Kết quả trả về là {"output": cypher_query}.
+        Tool để chuyển câu hỏi ngôn ngữ tự nhiên thành câu lệnh Cypher (string).
+        Dành cho agent kiểu ReAct nên trả về chuỗi trực tiếp.
         """
-        # Update to use invoke instead of run
         response = cypher_chain.invoke({"nl_question": nl_question})
-        # Extract content from AIMessage and clean it
-        cypher_query = response.content.strip().strip('"')  # loại bỏ dấu quotes nếu có
-        return {"output": cypher_query}
+        cypher_query = response.content.strip().strip('"')
+        return cypher_query
     
     return cypher_executor_tool, cypher_generator_tool
 
@@ -76,14 +70,12 @@ def download_files_for_course(urls_text: str, course_name: str):
     """
     # 1. Parse URLs từ `urls_text`
     urls = []
-    print(urls_text)
     for line in urls_text.splitlines():
         line = line.strip()
-        if line.lower().startswith("url:"):
-            url_part = line.split("url:", 1)[1].strip()
+        if line.lower().startswith(("url:", "f.url:")):
+            url_part = line.split(":", 1)[1].strip()
             if url_part:
                 urls.append(url_part)
-    print(urls)
     if not urls:
         return {"output": f"Không tìm thấy bất kỳ URL nào trong kết quả cho course: {course_name}"}
 
