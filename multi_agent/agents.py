@@ -1,5 +1,5 @@
 from langgraph.prebuilt import create_react_agent
-
+from langchain.agents import Tool
 from multi_agent.config import (
     get_web_search, get_web_search_llm, get_math_llm, 
     get_supervisor_llm, get_cypher_llm, get_action_build_llm
@@ -16,7 +16,7 @@ from multi_agent.utils.prompts import (
     math_prompt, 
     research_prompt, 
     cypher_agent_prompt,
-    action_build_generator_prompt
+    build_knowledge_graph_agent_prompt
 )
 from multi_agent.knowledge_graph.cyper_tools.neo4j_tools import (
     cypher_executor_tool, 
@@ -49,6 +49,23 @@ math_agent = create_react_agent(
 
 # CYPER KNOWLEDGE GRAPH AGENT
 cyper_kg_llm = get_cypher_llm()
+cyper_kg_tools = [
+    Tool(
+        name="cypher_generator_tool",
+        func=cypher_generator_tool,
+        description="Convert a natural language question into a Cypher query."
+    ),
+    Tool(
+        name="cypher_executor_tool",
+        func=cypher_executor_tool,
+        description="Execute a Cypher query on Neo4j and return the results as plain text."
+    ),
+    Tool(
+        name="download_files_for_course",
+        func=download_files_for_course,
+        description="Download files from a specific course given its course ID."
+    ),
+]
 cyper_kg_agent = create_react_agent(
     model=cyper_kg_llm,
     tools=[
@@ -68,7 +85,7 @@ build_knowledge_graph_agent = create_react_agent(
         action_generator_tool,
         build_knowledge_graph_tool
     ],
-    prompt=action_build_generator_prompt,
+    prompt=build_knowledge_graph_agent_prompt,
     name="build_knowledge_graph_agent",
 ) 
 
