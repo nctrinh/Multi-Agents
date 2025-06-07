@@ -1,7 +1,8 @@
-import requests
 import os
-from dotenv import load_dotenv
 import time
+
+import requests
+from dotenv import load_dotenv
 
 # Tải biến môi trường
 load_dotenv()
@@ -10,6 +11,7 @@ load_dotenv()
 CANVAS_API_URL = os.getenv("CANVAS_API_URL")
 CANVAS_API_TOKEN = os.getenv("CANVAS_API_TOKEN")
 headers = {"Authorization": f"Bearer {CANVAS_API_TOKEN}"}
+
 
 def fetch_all_pages(url, params=None):
     """
@@ -28,7 +30,11 @@ def fetch_all_pages(url, params=None):
         try:
             start_time = time.time()
             params['page'] = page
-            response = requests.get(url, headers=headers, params=params, timeout=timeout)
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=timeout)
             response.raise_for_status()
             data = response.json()
 
@@ -69,17 +75,22 @@ def fetch_all_pages(url, params=None):
 
     return all_data
 
+
 def fetch_users():
     """
     Lấy thông tin người dùng hiện tại (self), không cần phân trang
     """
     try:
-        response = requests.get(f"{CANVAS_API_URL}/users/self", headers=headers, timeout=30)
+        response = requests.get(
+            f"{CANVAS_API_URL}/users/self",
+            headers=headers,
+            timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
         print(f"Error fetching user data: {str(e)}")
         raise  # Re-raise to be handled by caller
+
 
 def fetch_courses():
     """
@@ -91,6 +102,7 @@ def fetch_courses():
     except requests.RequestException as e:
         return []
 
+
 def fetch_assignments(course_id):
     """
     Lấy tất cả bài tập của một khóa học
@@ -100,6 +112,7 @@ def fetch_assignments(course_id):
         return fetch_all_pages(url)
     except requests.RequestException as e:
         return []
+
 
 def fetch_submissions(course_id):
     """
@@ -111,6 +124,7 @@ def fetch_submissions(course_id):
     except requests.RequestException as e:
         return []
 
+
 def fetch_calendar_events(course_id):
     """
     Lấy tất cả sự kiện lịch
@@ -120,6 +134,7 @@ def fetch_calendar_events(course_id):
         return fetch_all_pages(url)
     except requests.RequestException as e:
         return []
+
 
 def fetch_discussion_topics(course_id):
     """
@@ -131,6 +146,7 @@ def fetch_discussion_topics(course_id):
     except requests.RequestException as e:
         return []
 
+
 def fetch_files(course_id):
     """
     Lấy tất cả file của một khóa học
@@ -140,6 +156,7 @@ def fetch_files(course_id):
         return fetch_all_pages(url)
     except requests.RequestException as e:
         return []
+
 
 def fetch_quizzes(course_id):
     """
@@ -151,12 +168,16 @@ def fetch_quizzes(course_id):
     except requests.RequestException as e:
         return []
 
+
 def fetch_communication_channels():
     """
     Lấy tất cả kênh liên lạc của người dùng, không cần phân trang
     """
     try:
-        response = requests.get(f"{CANVAS_API_URL}/users/self/communication_channels", headers=headers)
+        response = requests.get(
+            f"{CANVAS_API_URL}/users/self/communication_channels",
+            headers=headers,
+            timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:

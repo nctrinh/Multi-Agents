@@ -1,5 +1,7 @@
+from typing import Any, Dict, List
+
 from neo4j import GraphDatabase
-from typing import List, Dict, Any
+
 
 class Neo4jConnector:
     def __init__(self, uri: str, user: str, password: str):
@@ -8,7 +10,8 @@ class Neo4jConnector:
     def close(self):
         self.driver.close()
 
-    def run_cypher(self, cypher_query: str, parameters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    def run_cypher(self, cypher_query: str,
+                   parameters: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """
         Thực thi một truy vấn Cypher và trả về danh sách record (dạng dict).
         """

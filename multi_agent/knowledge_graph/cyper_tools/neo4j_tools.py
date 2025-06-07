@@ -1,16 +1,16 @@
+import json
 import os
-import requests
 import re
 import urllib
-import json
 from pathlib import Path
-from dotenv import load_dotenv
 
+import requests
+from dotenv import load_dotenv
 from langchain.prompts import PromptTemplate
-from langchain.schema.runnable import RunnableSequence
-from multi_agent.utils.prompts import cypher_generator_prompt
-from multi_agent.knowledge_graph.cyper_tools.neo4j_utils import Neo4jConnector
+
 from multi_agent.config import get_cypher_llm
+from multi_agent.knowledge_graph.cyper_tools.neo4j_utils import Neo4jConnector
+from multi_agent.utils.prompts import cypher_generator_prompt
 
 load_dotenv()
 
@@ -19,10 +19,14 @@ NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 # Database Connector
+
+
 def get_neo4j_connector():
     return Neo4jConnector(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
 
 # Remove the direct initialization
+
+
 def init_cypher_tools(neo4j_connector, llm_for_cypher):
     # Convert string prompt to PromptTemplate
     prompt_template = PromptTemplate(
@@ -31,7 +35,7 @@ def init_cypher_tools(neo4j_connector, llm_for_cypher):
     )
     # Replace LLMChain with RunnableSequence using pipe operator
     cypher_chain = prompt_template | llm_for_cypher
-    
+
     def cypher_executor_tool(cypher_query: str) -> str:
         """
         Thực thi Cypher query trên Neo4j và trả về kết quả dạng text
@@ -48,7 +52,7 @@ def init_cypher_tools(neo4j_connector, llm_for_cypher):
             return "\n".join(lines)
         except Exception as e:
             return f"Error khi chạy Cypher: {e}"
-        
+
     def cypher_generator_tool(nl_question: str) -> str:
         """
         Tool để chuyển câu hỏi ngôn ngữ tự nhiên thành câu lệnh Cypher (string).
@@ -57,8 +61,9 @@ def init_cypher_tools(neo4j_connector, llm_for_cypher):
         response = cypher_chain.invoke({"nl_question": nl_question})
         cypher_query = response.content.strip().strip('"')
         return cypher_query
-    
+
     return cypher_executor_tool, cypher_generator_tool
+
 
 def download_files_for_course(urls_text: str, course_name: str):
     """
@@ -77,7 +82,8 @@ def download_files_for_course(urls_text: str, course_name: str):
             if url_part:
                 urls.append(url_part)
     if not urls:
-        return {"output": f"Không tìm thấy bất kỳ URL nào trong kết quả cho course: {course_name}"}
+        return {
+            "output": f"Không tìm thấy bất kỳ URL nào trong kết quả cho course: {course_name}"}
 
     # 2. Xác định đường dẫn đến thư mục lưu file cho course
     current_file_path = Path(__file__).resolve()
@@ -121,16 +127,19 @@ def download_files_for_course(urls_text: str, course_name: str):
             filename = None
             cd = resp.headers.get("content-disposition", "")
             if cd:
-                m_star = re.search(r"filename\*\s*=\s*([^;]+)", cd, flags=re.IGNORECASE)
-                
+                m_star = re.search(
+                    r"filename\*\s*=\s*([^;]+)", cd, flags=re.IGNORECASE)
+
                 if m_star:
                     star_value = m_star.group(1).strip()
                     if "''" in star_value:
                         charset, encoded = star_value.split("''", 1)
                         try:
-                            filename = urllib.parse.unquote(encoded, encoding=charset or "utf-8", errors="ignore")
-                        except:
-                            filename = urllib.parse.unquote(encoded, encoding="utf-8", errors="ignore")
+                            filename = urllib.parse.unquote(
+                                encoded, encoding=charset or "utf-8", errors="ignore")
+                        except BaseException:
+                            filename = urllib.parse.unquote(
+                                encoded, encoding="utf-8", errors="ignore")
                     else:
                         filename = urllib.parse.unquote(star_value)
                     print(f"m_star: {m_star}")
@@ -148,7 +157,8 @@ def download_files_for_course(urls_text: str, course_name: str):
         except Exception as e:
             downloaded.append(f"ERROR_{idx}: {url} ({e})")
 
-    # 7. Cập nhật lại danh sách URL trong urls.json (ghép existing_urls và new_urls)
+    # 7. Cập nhật lại danh sách URL trong urls.json (ghép existing_urls và
+    # new_urls)
     updated_urls = existing_urls + new_urls
     try:
         with open(json_path, "w", encoding="utf-8") as jf:
@@ -175,4 +185,5 @@ def download_files_for_course(urls_text: str, course_name: str):
 
 # Initialize Neo4j tools
 neo4j_connector = get_neo4j_connector()
-cypher_executor_tool, cypher_generator_tool = init_cypher_tools(neo4j_connector, get_cypher_llm())
+cypher_executor_tool, cypher_generator_tool = init_cypher_tools(
+    neo4j_connector, get_cypher_llm())

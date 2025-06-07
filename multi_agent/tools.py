@@ -12,6 +12,7 @@ def create_task_description_handoff_tool(
 ):
     name = f"transfer_to_{agent_name}"
     description = description or f"Ask {agent_name} for help."
+
     @tool(name, description=description)
     def handoff_tool(
         # this is populated by the supervisor LLM
@@ -22,7 +23,8 @@ def create_task_description_handoff_tool(
         # these parameters are ignored by the LLM
         state: Annotated[MessagesState, InjectedState],
     ) -> Command:
-        task_description_message = {"role": "user", "content": task_description}
+        task_description_message = {
+            "role": "user", "content": task_description}
         agent_input = {**state, "messages": [task_description_message]}
         return Command(
             # highlight-next-line
@@ -43,9 +45,7 @@ assign_to_math_agent_with_description = create_task_description_handoff_tool(
 )
 
 assign_to_cyper_kg_agent_with_description = create_task_description_handoff_tool(
-    agent_name="cyper_kg_agent",
-    description="Assign task to a cyper kg agent",
-)
+    agent_name="cyper_kg_agent", description="Assign task to a cyper kg agent", )
 assign_to_build_knowledge_graph_agent_with_description = create_task_description_handoff_tool(
     agent_name="build_knowledge_graph_agent",
     description="Assign task to a build knowledge graph agent.",

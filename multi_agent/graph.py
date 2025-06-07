@@ -1,19 +1,14 @@
-from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.graph import END, START, MessagesState, StateGraph
 
-from multi_agent.agents import (
-    research_agent, 
-    math_agent, 
-    cyper_kg_agent, 
-    build_knowledge_graph_agent, 
-    supervisor_agent_with_description
-)
-
+from multi_agent.agents import (build_knowledge_graph_agent, cyper_kg_agent,
+                                supervisor_agent_with_description)
 
 # CREATE MULTI-AGENT GRAPH
 workflow = (
     StateGraph(MessagesState)
     .add_node(
-        supervisor_agent_with_description, destinations=("cyper_kg_agent", "build_knowledge_graph_agent", END)
+        supervisor_agent_with_description, destinations=(
+            "cyper_kg_agent", "build_knowledge_graph_agent", END)
     )
     # .add_node(research_agent)
     # .add_node(math_agent)

@@ -25,7 +25,7 @@ supervisor_prompt = """
     - Delegation: Use the correct handoff syntax exactly:
         e.g., `transfer_to_kg_agent: List movies released after 2020`
     - Final response: `FINAL RESPONSE: <concise summary>`
-    
+
     # ^^ Violates rule 3 & 4"""
 
 math_prompt = """
@@ -46,7 +46,7 @@ math_prompt = """
     ## OUTPUT EXAMPLES:
     User Task: "Calculate 3.14 * 10^2"
     Correct: `[SOLUTION] 314`
-    Wrong: "The area is 314 because πr²..." 
+    Wrong: "The area is 314 because πr²..."
 
     # ^^ Violates rule 2 & 4"""
 
@@ -64,11 +64,11 @@ research_prompt = """
     - **No follow-up questions** (e.g., avoid "Need more info?")
     3. Format: `[RESULT] <factual summary>`
     4. **Termination**: Return control to supervisor after responding
-    
+
     ## OUTPUT EXAMPLES:
     User Task: "Who is Marie Curie?"
     Correct: `[RESULT] Marie Curie (1867-1934) was a physicist known for radioactivity research.`
-    Wrong: "She discovered radium. Want more details?" 
+    Wrong: "She discovered radium. Want more details?"
 
     # ^^ Violates rules 2 & 3 & 4"""
 
@@ -211,7 +211,7 @@ cypher_agent_prompt = """
        - Output: Neo4j result as plain text
 
     3. download_files_for_course(urls_text: str, course_name: str) → { "output": confirmationText }
-       - Input: 
+       - Input:
          • urls_text: string containing file URLs from cypher_executor_tool output
          • course_name: exact course name
        - Output: download confirmation text
@@ -244,7 +244,7 @@ cypher_agent_prompt = """
             "nl_question": "Download all files in course Calculus 101"
         }
     }
-    # For download requests, query should be modified to: 
+    # For download requests, query should be modified to:
     # MATCH (c:Course)-[:HAS_FILE]->(f:File) WHERE c.name CONTAINS 'Calculus 101' RETURN f.url
     ```
     ```json
@@ -369,7 +369,6 @@ cypher_agent_prompt = """
 
     Now, process the following question:
     Question: {nl_question}"""
-
 action_build_generator_prompt = """
     You are an intelligent assistant (build_knowledge_graph_agent) whose sole responsibility is to analyze a supervisor's natural-language question and determine whether to build or delete the knowledge graph. You must return exactly one of two possible actions: "build" or "delete".
 
@@ -486,7 +485,7 @@ build_knowledge_graph_agent_prompt = '''You are a KNOWLEDGE GRAPH BUILDER AGENT 
        - Call action_generator_tool after receiving build_knowledge_graph_tool result
        - Process the original question again after receiving build_knowledge_graph_tool result
        - Add any output after build_knowledge_graph_tool result
-       
+
     Your task is ONLY to:
     1. Follow the exact execution state sequence
     2. Store each tool's output before proceeding
@@ -497,4 +496,3 @@ build_knowledge_graph_agent_prompt = '''You are a KNOWLEDGE GRAPH BUILDER AGENT 
 
     Now, process the following question:
     Question: {nl_question}'''
-
