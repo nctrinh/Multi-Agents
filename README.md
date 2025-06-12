@@ -1,6 +1,6 @@
-# LangGraph Test
+# Multi-agents
 
-A test project using LangGraph and LangChain for building multi-agent systems.
+A project using LangGraph, LangChain, and Neo4j to build multi-agent systems supporting student learning management on CANVAS.
 
 ## Quick Start
 
