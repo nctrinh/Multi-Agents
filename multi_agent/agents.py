@@ -16,15 +16,15 @@ from multi_agent.utils.prompts import (build_knowledge_graph_agent_prompt,
                                        cypher_agent_prompt, math_prompt,
                                        research_prompt, supervisor_prompt)
 
-# RESEARCH AGENT
-web_search = get_web_search(max_results=3)
-web_search_llm = get_web_search_llm()
-research_agent = create_react_agent(
-    model=web_search_llm,
-    tools=[web_search],
-    prompt=research_prompt,
-    name="research_agent",
-)
+# # RESEARCH AGENT
+# web_search = get_web_search(max_results=3)
+# web_search_llm = get_web_search_llm()
+# research_agent = create_react_agent(
+#     model=web_search_llm,
+#     tools=[web_search],
+#     prompt=research_prompt,
+#     name="research_agent",
+# )
 
 # MATH AGENT
 math_llm = get_math_llm()
